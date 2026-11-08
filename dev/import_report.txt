@@ -1,0 +1,120 @@
+skill 1 Ataque: kept setup action, target action, whole action, follow action, finish action
+skill 2 Outros: old code said free, description says full (used full)
+skill 8 Ataque: kept setup action, target action
+skill 19 Perfeição dos Animais: old code said free, description says full (used full)
+skill 23 Ataque: kept setup action, target action, whole action, follow action, finish action
+skill 28 Proteção da Fé: old code said free, description says full (used full)
+skill 36 Salto da Pantera: kept Custom MP Cost
+skill 42 Sugestão Inegável: old code said free, description says full (used full)
+skill 52 Ataques Rápidos: kept setup action, target action, whole action, follow action, finish action
+skill 60 Yamaryu no Shimo: kept setup action, target action, whole action, follow action, finish action
+skill 69 Lentidão Mística: kept Custom Execution
+skill 73 Lentidão Mística: kept Custom Execution
+skill 90 Prisma Celestial: kept showScript
+skill 91 Energia Positiva: kept showScript
+skill 104 Cancelar: old code said free, description says full (used full)
+skill 132 Banho de Sangue: kept showScript
+skill 146 Rajada de Disparos: kept setup action, target action, whole action, follow action, finish action
+skill 147 Saraivada de Flechas: old code said free, description says full (used full)
+skill 148 Saraivada de Flechas: old code said free, description says full (used full)
+skill 170 Reflexo Instantâneo: kept requireScript
+skill 174 Constrição Atroz: kept Custom Execution
+skill 183 Forma Natural: kept showScript
+skill 193 Aura Restauradora: kept requireScript
+skill 248 Ataque: kept setup action, target action, whole action, follow action, finish action
+skill 260 Nota Ressoante: kept requireScript
+skill 277 Golpe pelas Costas: kept requireScript
+skill 278 Invisibilidade: kept requireScript
+skill 279 Sussurro Mortal: old code said free, description says full (used full)
+skill 293 Ataque: kept setup action, target action, whole action, follow action, finish action
+skill 294 Pancada com Escudo: kept setup action, target action, whole action, follow action, finish action
+skill 299 Disparo dos Céus: kept setup action, target action, whole action, follow action, finish action
+skill 300 Distração Alada: old code said free, description says full (used full)
+skill 304 Saque Perfeito: kept Custom MP Cost
+skill 305 Puxada Perfeita: kept Custom MP Cost
+skill 306 Mira Perfeita: kept Custom MP Cost
+skill 311 Flecha Elétrica: kept setup action, target action, whole action, follow action, finish action
+skill 323 Mestre dos Elementos: kept requireScript
+skill 324 Invocar Monstro: old code said free, description says full (used full)
+skill 333 Erguer os Mortos: old code said free, description says full (used full)
+skill 333 Erguer os Mortos: kept Custom MP Cost
+skill 365 Crime Perfeito: kept requireScript
+skill 368 Trespassar Inimigo: kept requireScript
+skill 369 Dor Revigorante: kept requireScript
+skill 375 Revólver de Mão: kept showScript
+skill 377 Ataque: kept setup action, target action, whole action, follow action, finish action
+skill 378 Revólver de Mão: kept setup action, target action, whole action, follow action, finish action
+skill 380 Força Cinética: old code said free, description says full (used full)
+skill 392 Runa de Proteção: old code said free, description says full (used full)
+skill 401 Cinto da Força: old code said free, description says full (used full)
+skill 401 Cinto da Força: kept showScript, requireScript
+skill 402 Anel da Proteção: old code said free, description says full (used full)
+skill 402 Anel da Proteção: kept showScript, requireScript
+skill 403 Manto da Resistência: old code said free, description says full (used full)
+skill 403 Manto da Resistência: kept showScript, requireScript
+skill 404 Amuleto da Saúde: old code said free, description says full (used full)
+skill 404 Amuleto da Saúde: kept showScript, requireScript
+skill 405 Botas da Velocidade: old code said free, description says full (used full)
+skill 405 Botas da Velocidade: kept showScript, requireScript
+skill 406 Tiara do Intelecto: old code said free, description says full (used full)
+skill 406 Tiara do Intelecto: kept showScript, requireScript
+skill 407 Cetro da Sabedoria: old code said free, description says full (used full)
+skill 407 Cetro da Sabedoria: kept showScript, requireScript
+skill 408 Capuz do Ladrão: old code said free, description says full (used full)
+skill 408 Capuz do Ladrão: kept showScript, requireScript
+skill 409 Cinturão do Gigante: old code said free, description says full (used full)
+skill 409 Cinturão do Gigante: kept showScript, requireScript
+skill 410 Faixa do Monge: old code said free, description says full (used full)
+skill 410 Faixa do Monge: kept showScript, requireScript
+skill 411 Armadura da Vida: old code said free, description says full (used full)
+skill 411 Armadura da Vida: kept showScript, requireScript
+skill 412 Escudo Fortificado: old code said free, description says full (used full)
+skill 412 Escudo Fortificado: kept showScript, requireScript
+skill 413 Robe do Arquimago: old code said free, description says full (used full)
+skill 413 Robe do Arquimago: kept showScript, requireScript
+skill 414 Veste da Imunidade: old code said free, description says full (used full)
+skill 414 Veste da Imunidade: kept showScript, requireScript
+skill 415 Gema do Vampiro: old code said free, description says full (used full)
+skill 415 Gema do Vampiro: kept showScript, requireScript
+skill 416 Olho da Tempestade: old code said free, description says full (used full)
+skill 416 Olho da Tempestade: kept showScript, requireScript
+skill 417 Sandálias Divinas: old code said free, description says full (used full)
+skill 417 Sandálias Divinas: kept showScript, requireScript
+skill 418 Passos do Zéfiro: old code said free, description says full (used full)
+skill 418 Passos do Zéfiro: kept showScript, requireScript
+skill 419 Elmo do Cavaleiro: old code said free, description says full (used full)
+skill 419 Elmo do Cavaleiro: kept showScript, requireScript
+skill 420 Coroa do Arcano: old code said free, description says full (used full)
+skill 420 Coroa do Arcano: kept showScript, requireScript
+skill 421 Cetro da Claridade: old code said free, description says full (used full)
+skill 421 Cetro da Claridade: kept showScript, requireScript
+skill 422 Varinha de Guerra: old code said free, description says full (used full)
+skill 422 Varinha de Guerra: kept showScript, requireScript
+skill 423 Máscara da Águia: old code said free, description says full (used full)
+skill 423 Máscara da Águia: kept showScript, requireScript
+skill 424 Venda do Assassino: old code said free, description says full (used full)
+skill 424 Venda do Assassino: kept showScript, requireScript
+skill 425 Comprar Itens: old code said free, description says full (used full)
+skill 425 Comprar Itens: kept showScript
+skill 426 Faixa do Monge: kept showScript
+skill 427 Veste da Imunidade: kept showScript
+skill 428 Olho da Tempestade: kept showScript
+skill 429 Passos do Zéfiro: kept showScript
+skill 430 Elmo do Cavaleiro: kept showScript
+skill 431 Varinha de Guerra: kept showScript
+skill 432 Coroa do Arcano: kept showScript
+skill 433 Poção Eterna: kept showScript
+skill 434 Elixir da Vida: kept showScript
+skill 435 Elixir da Magia: kept showScript
+skill 436 Aprender Habilidade: old code said free, description says full (used full)
+skill 436 Aprender Habilidade: kept showScript
+skill 437 Habilidade #1: old code said free, description says full (used full)
+skill 437 Habilidade #1: kept requireScript
+skill 438 Habilidade #2: old code said free, description says full (used full)
+skill 438 Habilidade #2: kept requireScript
+skill 439 Habilidade #3: old code said free, description says full (used full)
+skill 439 Habilidade #3: kept requireScript
+skill 440 Habilidade Final: old code said free, description says full (used full)
+skill 440 Habilidade Final: kept requireScript
+skill 452 Dádiva da Morte: kept requireScript
+skill 500 Descansar: kept showScript
