@@ -37,8 +37,29 @@
   // Choose a menu entry by name.
   H.choose = async (name) => {
     const w = SceneManager._scene._mapSrpgActorCommandWindow;
+    await H.until(() => w.isOpen() && w.active, 300);
     const i = w._list.findIndex((c) => c.name === name);
+    if (i < 0) throw new Error(`"${name}" is not in the menu: ${H.menu()}`);
     w.select(i); await H.press("ok"); await H.run(15); return H.phase();
+  };
+  // End every hero's turn (closing whatever menu is open) until the enemy phase starts.
+  H.endHeroTurn = async () => {
+    for (let guard = 0; guard < 20 && $gameSystem.isBattlePhase() === "actor_phase"; guard++) {
+      if ($gameSystem.isSubBattlePhase() === "actor_command_window") { await H.choose("Encerrar"); await H.run(20); continue; }
+      const next = HoN.allUnits().find((u) => u.isActor() && u.canInput());
+      if (!next) break;
+      await H.select(next.event().posX(), next.event().posY());
+    }
+    return H.until(() => $gameSystem.isBattlePhase() === "enemy_phase", 2000);
+  };
+  // Let the enemy phase play out (skipping messages) until the heroes' turn is back.
+  H.untilHeroTurn = async () => {
+    const t = await H.until(() => {
+      if ($gameMessage.isBusy()) Input._currentState.ok = !Input._currentState.ok;
+      return H.phase() === "actor_phase/normal" && !$gameMap.isEventRunning() && H.step(0) === "Scene_Map";
+    }, 30000);
+    Input._currentState.ok = false;
+    return t;
   };
   // Confirm a cell (move destination or target) and wait until the menu is back or the turn moved on.
   H.confirmAt = async (x, y) => {

@@ -688,11 +688,35 @@ Imported.HoN_Actions = "0.1";
     Game_Player.prototype.triggerAction = function() {
         const moving = $gameSystem.isSRPGMode() && $gameSystem.isSubBattlePhase() === "actor_move" &&
             $gameTemp._honMoveSkill;
+        const pressed = Input.isTriggered("ok") || TouchInput.isTriggered();
+        if (moving && pressed && this.honSwitchFromMove()) return true;
+        const mover = $gameTemp.activeEvent();
         const result = _triggerAction.call(this);
-        if (moving && $gameSystem.isSubBattlePhase() === "actor_command_window") {
+        if (moving && $gameSystem.isSubBattlePhase() === "actor_command_window" && $gameTemp.activeEvent() === mover) {
             A.finishMove(activeUnit());
         }
         return result;
+    };
+
+    // OK on another hero while choosing a destination: drop this move and
+    // open that hero's menu (unless Unit Switching = locked holds this unit).
+    Game_Player.prototype.honSwitchFromMove = function() {
+        const mover = $gameTemp.activeEvent();
+        const other = $gameMap.eventsXy(this.posX(), this.posY())
+            .find((e) => !e.isErased() && e !== mover && e.isType() === "actor");
+        if (!other) return false;
+        const arr = $gameSystem.EventToUnit(other.eventId());
+        if (!arr || !A.isControlled(arr[1]) || !arr[1].canInput()) return false;
+        const unit = activeUnit();
+        if (UNIT_SWITCHING === "locked" && unit.honTurn().touched) {
+            SoundManager.playBuzzer();
+            return true;
+        }
+        SoundManager.playOk();
+        unit._honMoveOverride = null;
+        $gameTemp._honMoveSkill = 0;
+        A.openMenu(other);
+        return true;
     };
 
     // Cancel while choosing a destination: back to the menu, not to the map.

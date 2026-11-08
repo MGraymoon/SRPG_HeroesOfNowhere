@@ -130,6 +130,12 @@ var HoN = HoN || {};
         return HoN.compile("return (" + expr + ");", label);
     };
 
+    // How <script:event> blocks are compiled. Other HoN plugins can specialise
+    // this per kind of object (HoN_States does it for states).
+    HoN.compileScript = function(kind, event, code, label) {
+        return HoN.compile(code, label);
+    };
+
     //=========================================================================
     // Reading notes
     //=========================================================================
@@ -142,7 +148,7 @@ var HoN = HoN || {};
 
         // <script:event> ... </script>
         for (const m of note.matchAll(/<script:\s*(\w+)\s*>([\s\S]*?)<\/script>/gi)) {
-            hon.scripts[m[1].toLowerCase()] = HoN.compile(m[2], `${label} <script:${m[1]}>`);
+            hon.scripts[m[1].toLowerCase()] = HoN.compileScript(kind, m[1].toLowerCase(), m[2], `${label} <script:${m[1]}>`);
         }
         const showBlock = note.match(/<showScript>([\s\S]*?)<\/showScript>/i);
         if (showBlock) hon.showScript = HoN.compile(showBlock[1], `${label} <showScript>`);
@@ -253,6 +259,38 @@ var HoN = HoN || {};
             }
             return _srpgSkillRange.call(this, skill);
         };
+    }
+
+    //=========================================================================
+    // MV-era calls still used by scripts in the database
+    //=========================================================================
+    // MV: character.requestAnimation(id) / battler.startAnimation(id, mirror)
+    if (!Game_CharacterBase.prototype.requestAnimation) {
+        Game_CharacterBase.prototype.requestAnimation = function(animationId) {
+            if (animationId > 0) $gameTemp.requestAnimation([this], animationId);
+        };
+    }
+    if (!Game_Battler.prototype.startAnimation) {
+        Game_Battler.prototype.startAnimation = function(animationId, mirror) {
+            if (!(animationId > 0)) return;
+            const event = $gameSystem.isSRPGMode() && this.event && this.event();
+            if (event && !$gameParty.inBattle()) $gameTemp.requestAnimation([event], animationId, mirror);
+            else $gameTemp.requestAnimation([this], animationId, mirror);
+        };
+    }
+    // Old SRPG_ActionTypes helper: units of a side next to an event.
+    if (!Game_System.prototype.unitsAround) {
+        Game_System.prototype.unitsAround = function(eventId, type) {
+            const arr = this.EventToUnit(eventId);
+            if (!arr || !arr[1]) return 0;
+            return HoN.adjacentUnits(arr[1], type === "friend" ? "friend" : "opponent").length;
+        };
+    }
+    // Yanfly's battler.battler() returned the battle sprite (setupFloat etc.).
+    // Visual effects aren't ported yet, so it returns an object that ignores calls.
+    HoN.ignoreCalls = new Proxy(function() {}, { get: () => HoN.ignoreCalls, apply: () => HoN.ignoreCalls });
+    if (!Game_Battler.prototype.battler) {
+        Game_Battler.prototype.battler = function() { return HoN.ignoreCalls; };
     }
 
     //=========================================================================

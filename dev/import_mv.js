@@ -42,11 +42,139 @@ const report = [];
 // 1. Database
 // -----------------------------------------------------------------------------
 const DB_FILES = ["Actors", "Classes", "Items", "Weapons", "Armors", "Enemies",
-  "States", "Animations", "Tilesets", "CommonEvents", "Troops"];
+  "Animations", "Tilesets", "CommonEvents", "Troops"];
+// Yanfly AutoPassiveStates tag on actors, classes, equipment, enemies.
+const convertPassiveTag = (note) => note.replace(/<Passive State:\s*([^>]+)>/gi, (m, list) => `<passiveState:${list.trim()}>`);
 for (const f of DB_FILES) {
   const data = mvData(f + ".json");
-  if (f === "States") data.forEach((s) => { if (s) s.messageType = 1; });
+  if (["Actors", "Classes", "Weapons", "Armors", "Enemies"].includes(f)) {
+    data.forEach((o) => { if (o && o.note) o.note = convertPassiveTag(o.note); });
+  }
   writeJson(mzDataPath(f + ".json"), data);
+}
+
+// -----------------------------------------------------------------------------
+// 1b. State conversion (Yanfly BuffsStatesCore / StateCategories / AutoPassive /
+//     StateProtection / QuasiParams -> HoN_States)
+// -----------------------------------------------------------------------------
+const STATE_EVENTS = {
+  "apply": "add", "remove": "remove", "leave": "expire", "turn start": "turnStart", "turn end": "turnEnd",
+  "select": "targeted", "deselect": "targetedEnd", "react": "takeDamage", "respond": "afterTakeDamage",
+  "initiate": "useStart", "confirm": "dealDamage", "establish": "afterDealDamage", "conclude": "useEnd",
+  "action start": "actionStart", "action end": "actionEnd", "battle": "battleStart",
+};
+const BASE_PARAM = { mhp: "MHP", mmp: "MMP", atk: "ATK", def: "DEF", mat: "MAT", mdf: "MDF", agi: "AGI", luk: "LUK" };
+
+function convertState(st) {
+  const out = [];
+  const blocks = {}; // event -> code
+  let passiveCode = null;
+  const rest = [];
+  // Line by line, exactly like Yanfly's parser (so malformed blocks behave as they did in MV).
+  let mode = null;
+  for (const line of st.note.split(/\r?\n/)) {
+    let m;
+    if ((m = line.match(/^\s*<Custom (.+?) Effect>\s*$/i))) {
+      const ev = STATE_EVENTS[m[1].toLowerCase()];
+      if (ev) { mode = ev; blocks[ev] = blocks[ev] || ""; }
+      else { mode = "__ignored"; report.push(`state ${st.id} ${st.name}: <Custom ${m[1]} Effect> was never a Yanfly event (MV ignored it); left out`); }
+      continue;
+    }
+    if (/^\s*<\/Custom .+? Effect>\s*$/i.test(line)) { mode = null; continue; }
+    if (/^\s*<Custom Passive Condition>\s*$/i.test(line)) { mode = "__passive"; passiveCode = ""; continue; }
+    if (/^\s*<\/Custom Passive Condition>\s*$/i.test(line)) { mode = null; continue; }
+    if (mode === "__ignored") continue;
+    if (mode === "__passive") { passiveCode += line + "\n"; continue; }
+    if (mode) { blocks[mode] += line + "\n"; continue; }
+    rest.push(line);
+  }
+  if (/<Custom .+? Effect>[\s\S]*<Custom .+? Effect>/i.test(st.note) &&
+      (st.note.match(/<Custom /gi) || []).length !== (st.note.match(/<\/Custom /gi) || []).length) {
+    report.push(`state ${st.id} ${st.name}: a <Custom ... Effect> block was opened but not closed (converted as MV read it)`);
+  }
+  let note = rest.join("\n");
+
+  // categories -> tags
+  const tags = [];
+  note = note.replace(/<Category:\s*([^>]+)>/gi, (m, c) => {
+    c = c.trim();
+    if (/^bypass death removal$/i.test(c)) out.push("<keepOnDeath>");
+    else tags.push(c);
+    return "";
+  });
+  if (tags.length) out.push(`<tags: ${[...new Set(tags)].join(", ")}>`);
+
+  // movement from the state's counter
+  note = note.replace(/<srpgMovePlus:\s*counter\s*>/gi, () => { out.push("<moveBonus: counter>"); return ""; });
+
+  // YEP BaseParamControl "<atk Plus: -1>" -> params lines
+  const extraParams = [];
+  note = note.replace(/<(mhp|mmp|atk|def|mat|mdf|agi|luk) Plus:\s*([^>]+)>/gi, (m, p, v) => {
+    extraParams.push(`${BASE_PARAM[p.toLowerCase()]}: ${v.trim()}`);
+    return "";
+  });
+  if (extraParams.length) {
+    if (/<params>/i.test(note)) note = note.replace(/<\/params>/i, extraParams.join("\n") + "\n</params>");
+    else note += "\n<params>\n" + extraParams.join("\n") + "\n</params>";
+  }
+
+  // YEP StateProtection guts -> survive
+  const guts = note.match(/<HP Protection:\s*(True )?Guts(\d*)\s*\d+%>/i);
+  if (guts) {
+    if (guts[2]) report.push(`state ${st.id} ${st.name}: "Guts${guts[2]}" was not a Yanfly keyword, so it never worked in MV; converted to <survive>`);
+    const once = /<HP Protection:\s*Trigger Removal/i.test(note);
+    out.push(once ? "<survive:once>" : "<survive>");
+  }
+  note = note.replace(/<HP Protection:[^>]*>/gi, "");
+
+  // YEP simple passive conditions
+  const simple = note.match(/<Passive Condition:\s*HP (Above|Below)\s*(\d+)(%?)>/i);
+  if (simple) {
+    const n = Number(simple[2]);
+    const lhs = simple[3] ? "a.hpRate() * 100" : "a.hp";
+    passiveCode = (passiveCode || "") + `if (!(${lhs} ${simple[1].toLowerCase() === "above" ? ">" : "<"} ${n})) return false;\n`;
+    note = note.replace(/<Passive Condition:[^>]*>/gi, "");
+  }
+
+  // misc
+  note = note.replace(/<hide Turns>/gi, "");
+  note = note.replace(/<srpgCounterSkill:\s*(\d+)>/gi, (m, n) => `<srpgReactionSkill:${n}>`);
+  if (/<Regen Formula:/i.test(note)) report.push(`state ${st.id} ${st.name}: <Regen Formula> came from a plugin that wasn't installed in MV; left as is`);
+  for (const t of ["State Animation", "State Motion", "Weapon Image", "Weapon Motion", "Weapon Animation"]) {
+    if (new RegExp("<" + t, "i").test(note)) { report.push(`state ${st.id} ${st.name}: <${t}> kept (visual, not ported yet)`); break; }
+  }
+
+  // scripts
+  for (const [ev, code] of Object.entries(blocks)) {
+    if (code.trim()) out.push(`<script:${ev}>\n${code.trim()}\n</script>`);
+  }
+  if (passiveCode !== null) {
+    const body = /\bcondition\b/.test(passiveCode)
+      ? `var condition = true;\n${passiveCode.trim()}\nreturn condition;`
+      : `${passiveCode.trim()}\nreturn true;`;
+    out.push(`<passiveCondition>\n${body}\n</passiveCondition>`);
+  }
+
+  st.note = (out.join("\n") + "\n" + note.replace(/\n\s*\n\s*\n+/g, "\n").trim()).trim();
+  st.messageType = 1;
+}
+
+// Typos in the MV data that made these scripts fail silently in MV.
+const STATE_TYPO_FIXES = {
+  148: [/^f \(this\.isPhysical\(\)/m, "if (this.isPhysical()"],   // Ponto Fraco
+  215: [/target\.addState\(220\):/, "target.addState(220);"],     // Rolamento Defensivo
+};
+{
+  const statesData = mvData("States.json");
+  for (const [id, [from, to]] of Object.entries(STATE_TYPO_FIXES)) {
+    const s = statesData[id];
+    if (s && from.test(s.note)) {
+      s.note = s.note.replace(from, to);
+      report.push(`state ${id} ${s.name}: fixed a typo that broke its script in MV`);
+    }
+  }
+  statesData.forEach((s) => { if (s) convertState(s); });
+  writeJson(mzDataPath("States.json"), statesData);
 }
 
 // -----------------------------------------------------------------------------
@@ -400,11 +528,16 @@ Object.assign(core, {
 core["battleDistanceID"] = "98";                 // var 6 is "SummonX" here
 const pluginByName = (n) => plugins.find((p) => p.name === n);
 pluginByName("SRPG_TerrainEffectPlus_MZ").status = false; // sample maps tags to states 60-64
+// HoN_Actions owns the move step: these Gear shortcuts would skip its bookkeeping.
+Object.assign(pluginByName("SRPG_UX_Cursor_MZ").parameters, {
+  "Switch Actor While Moving": "false", "Quick Attack": "false",
+});
 Object.assign(pluginByName("SRPG_Summon_MZ").parameters, {
   "Summon Map Id": "1", "summon appear Animation Id": "0", "summon disappear Animation Id": "0",
 });
 const hon = [
   { name: "HoN_Core", status: true, description: "Heroes of Nowhere: tags, compiled scripts and helpers.", parameters: {} },
+  { name: "HoN_States", status: true, description: "Heroes of Nowhere: state durations, passives, params, tags, counters, scripts.", parameters: {} },
   { name: "HoN_Actions", status: true, description: "Heroes of Nowhere: full/free actions and Move as a skill.",
     parameters: { "Move Skill ID": String(MOVE_SKILL_ID), "Default Action": "full", "Unit Switching": "free",
       "End Command": "Encerrar", "Item Command": "Itens" } },
