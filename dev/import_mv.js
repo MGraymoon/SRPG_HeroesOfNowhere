@@ -34,8 +34,15 @@ const mvData = (f) => readJson(path.join(MV, "data", f));
 const mzDataPath = (f) => path.join(MZ, "data", f);
 
 const TEST_MAP_ID = 4;
-const TEST_PARTY = [32, 4, 1, 19]; // Fang, Nith, Elise, Sieglinde
+const TEST_PARTY = [32, 4, 1, 19, 36]; // Fang, Nith, Elise, Sieglinde, Senka (summon + auras)
 const MOVE_SKILL_ID = 501;
+// PvP test: MV's arena (Map014), two teams of four.
+const PVP_MAP_ID = 14;
+const PVP_SWITCH = 7, DEATHMATCH_SWITCH = 92, LIVES_VAR = 95, RED_WINS = 93, BLUE_WINS = 94;
+const PVP_TEAMS = {
+  blue: { actors: [1, 32, 4, 19], cells: [[9, 18], [10, 18], [11, 18], [12, 18]], dir: 8 },
+  red: { actors: [36, 3, 6, 10], cells: [[9, 3], [10, 3], [11, 3], [12, 3]], dir: 2 },
+};
 const report = [];
 
 // -----------------------------------------------------------------------------
@@ -45,11 +52,52 @@ const DB_FILES = ["Actors", "Classes", "Items", "Weapons", "Armors", "Enemies",
   "Animations", "Tilesets", "CommonEvents", "Troops"];
 // Yanfly AutoPassiveStates tag on actors, classes, equipment, enemies.
 const convertPassiveTag = (note) => note.replace(/<Passive State:\s*([^>]+)>/gi, (m, list) => `<passiveState:${list.trim()}>`);
+// -----------------------------------------------------------------------------
+// Super Retro World look (sprites built by dev/build_srw_sprites.py)
+// -----------------------------------------------------------------------------
+// Heroes: actor id -> SRW sprite and motions.
+const SRW_ACTORS = {
+  1: { sprite: "flame_witch", attack: "sword02", cast: "staff02" },    // Elise: rapier, fire staff
+  32: { sprite: "scarf_brawler", attack: "slash01", cast: "staff05" }, // Fang: open-palm strikes, white ki
+  4: { sprite: "azure_elf", attack: "spear01", cast: "staff03" },      // Nith: thrust, blue staff
+  19: { sprite: "crimson_blade", attack: "spear02", cast: "staff06" }, // Sieglinde: lance, gold staff
+};
+// New enemies made from an existing one: copies its stats, gets an SRW sprite,
+// and replaces it on the test map.
+const SRW_ENEMIES = [
+  { name: "Bandido", from: 10, sprite: "bandit", attack: "slash01", cast: "staff01" }, // from Bárbaro
+];
+const srwTags = (u) => `<fieldSprite: ${u.sprite}>\n<attackMotion: ${u.attack}>\n<castMotion: ${u.cast}>`;
+const replaceEnemyOnMap = {}; // old enemy id -> new enemy id
+
+function applySrwLook(file, data) {
+  if (file === "Actors") {
+    for (const [id, u] of Object.entries(SRW_ACTORS)) {
+      const a = data[id];
+      a.characterName = `$hon_${u.sprite}`;
+      a.characterIndex = 0;
+      a.note = (a.note ? a.note + "\n" : "") + srwTags(u);
+    }
+  }
+  if (file === "Enemies") {
+    for (const u of SRW_ENEMIES) {
+      const e = JSON.parse(JSON.stringify(data[u.from]));
+      e.id = data.length;
+      e.name = u.name;
+      e.note = e.note.replace(/<characterName:[^>]*>/i, "").replace(/<characterIndex:[^>]*>/i, "")
+        + `\n<characterName:$hon_${u.sprite}>\n<characterIndex:0>\n` + srwTags(u);
+      data.push(e);
+      replaceEnemyOnMap[u.from] = e.id;
+    }
+  }
+}
+
 for (const f of DB_FILES) {
   const data = mvData(f + ".json");
   if (["Actors", "Classes", "Weapons", "Armors", "Enemies"].includes(f)) {
     data.forEach((o) => { if (o && o.note) o.note = convertPassiveTag(o.note); });
   }
+  applySrwLook(f, data);
   writeJson(mzDataPath(f + ".json"), data);
 }
 
@@ -163,6 +211,10 @@ function convertState(st) {
 const STATE_TYPO_FIXES = {
   148: [/^f \(this\.isPhysical\(\)/m, "if (this.isPhysical()"],   // Ponto Fraco
   215: [/target\.addState\(220\):/, "target.addState(220);"],     // Rolamento Defensivo
+  // MV hack: the death state erased the unit's event itself. Gear erases fallen
+  // units after the action and counts them (living heroes/enemies variables);
+  // erasing first made Gear skip that count, so "all enemies down" never fired.
+  1: [/<Custom Apply Effect>\s*user\.event\(\)\.erase\(\);\s*<\/Custom Apply Effect>/, ""],
 };
 {
   const statesData = mvData("States.json");
@@ -170,10 +222,38 @@ const STATE_TYPO_FIXES = {
     const s = statesData[id];
     if (s && from.test(s.note)) {
       s.note = s.note.replace(from, to);
-      report.push(`state ${id} ${s.name}: fixed a typo that broke its script in MV`);
+      report.push(`state ${id} ${s.name}: script fixed (see STATE_TYPO_FIXES)`);
     }
   }
   statesData.forEach((s) => { if (s) convertState(s); });
+
+  // Summon lifespans: MV knocked a summon out with "Desummoned" (66) + "HiddenHP" (67)
+  // when its lifespan state ran out; now the summon leaves the battle.
+  for (const s of statesData) {
+    if (s && /user\.addState\(66\);\s*user\.addState\(67\);/.test(s.note)) {
+      s.note = s.note.replace(/user\.addState\(66\);\s*user\.addState\(67\);/g, "user.honDesummon();");
+    }
+  }
+
+  // Auras: MV listed them as script calls in common event 14 (AuraManager),
+  // this.isActorAura(ownerEvent, auraState, range, childState, mode, xtra).
+  // They become <aura> blocks on the aura state.
+  const AURA_MODES = { 0: "keep", 1: "remove", 10: "counter", 11: "count" };
+  const ce14 = mvData("CommonEvents.json")[14];
+  for (const c of ce14.list) {
+    if (c.code !== 355 && c.code !== 655) continue;
+    const m = c.parameters[0].match(/is(Actor|Enemy|Unit)Aura\(\s*\$gameActors\.actor\((\d+)\)[^,]*,\s*(\d+)\s*,\s*([^,]+),\s*(\d+)\s*,\s*(\d+)\s*,\s*(-?\d+)\s*\)/);
+    if (!m) continue;
+    const [, side, ownerId, auraId, rangeExpr, childId, mode, xtra] = m;
+    const range = rangeExpr.trim().replace(new RegExp(`\\$gameActors\\.actor\\(${ownerId}\\)\\.`, "g"), "a.");
+    const lines = [`state: ${childId}`, `range: ${range}`,
+      `target: ${side === "Actor" ? "ally" : side === "Enemy" ? "enemy" : "all"}`,
+      `mode: ${AURA_MODES[mode] || "remove"}`];
+    if (mode === "10") lines.push(`counter: a.param(${xtra})`);
+    if (!AURA_MODES[mode]) report.push(`aura on state ${auraId}: MV mode ${mode} isn't ported (used "remove")`);
+    statesData[auraId].note = `<aura>\n${lines.join("\n")}\n</aura>\n` + statesData[auraId].note;
+    report.push(`aura: state ${auraId} ${statesData[auraId].name} -> state ${childId} (${lines.slice(1).join(", ")})`);
+  }
   writeJson(mzDataPath("States.json"), statesData);
 }
 
@@ -287,6 +367,19 @@ function convertSkill(s) {
   // --- single-line tags
   note = note.replace(/<ImmediateSkill:\s*\d+>/gi, () => { action = action || "free"; return ""; });
   note = note.replace(/<addActionTimes:\s*-?\d+>/gi, "");
+  note = note.replace(/<mapBattle:\s*\w+>/gi, ""); // every battle happens on the map now
+  // <targetType:enemy|friend> (SRPG_ActionTypes) -> <target:enemy|ally> (HoN_Targeting)
+  note = note.replace(/<targetType:\s*(\w+)\s*>/gi, (m, t) => `<target:${t.toLowerCase() === "friend" ? "ally" : "enemy"}>`);
+  // "single" was a custom AoE shape in the MV SRPG_AoE.js meaning "only the target cell":
+  // that's a plain single-target skill. Gear doesn't know the shape, and its AI
+  // then decides the skill has no target at all.
+  if (/<srpgAreaType:\s*single\s*>/i.test(note) || tags.some((t) => /<srpgAreaType:\s*single\s*>/i.test(t))) {
+    note = note.replace(/<srpgAreaType:\s*single\s*>/gi, "").replace(/<srpgAreaRange:\s*\d+\s*>/gi, "");
+    for (let i = tags.length - 1; i >= 0; i--) {
+      if (/<srpgArea(Type|Range):/i.test(tags[i])) tags.splice(i, 1);
+    }
+    report.push(`skill ${s.id} ${s.name}: <srpgAreaType:single> -> plain single target`);
+  }
   note = note.replace(/<Cooldown:\s*(\d+)>/gi, (m, n) => { tags.push(`<cooldown:${n}>`); return ""; });
   note = note.replace(/<Sort Priority:\s*(\d+)>/gi, (m, n) => { tags.push(`<order:${n}>`); return ""; });
   let passive = false;
@@ -337,10 +430,57 @@ function convertSkill(s) {
   s.note = ([...new Set(tags)].join("\n") + "\n" + note).trim();
 }
 
+// Typos in skill scripts.
+const SKILL_TYPO_FIXES = {
+  // Desafio Honrado: event_id doesn't exist, so the taunt pointed at nobody in MV
+  153: [/a\.event\(\)\.event_id/, "a.event().eventId()"],
+};
+for (const [id, [from, to]] of Object.entries(SKILL_TYPO_FIXES)) {
+  if (from.test(skills[id].note)) {
+    skills[id].note = skills[id].note.replace(from, to);
+    report.push(`skill ${id} ${skills[id].name}: fixed a typo that broke its script in MV`);
+  }
+}
+
 for (const s of skills) {
   if (!s || !s.name) continue;
   s.messageType = 1;
   convertSkill(s);
+}
+
+// Summons: MV used one common event per summon (YEP EventSpawner + a pre-made
+// actor per copy). Each becomes a <summon> block plus a <script:summoned>.
+// The lifespan stays in the states MV already used (their remove script now
+// calls honDesummon).
+const SUMMONS = {
+  66: { actor: 101, at: "user", count: "a.mat", animation: 149, script: "b.addState(64);" },  // Portão do Submundo
+  177: { actor: 109, animation: 182, script: "b.addState(185);" },                          // Aliado da Natureza
+  197: { actor: 110, animation: 185,                                                        // Muralha de Gelo
+    script: "b.addState(196);\nb.setStateCounter(196, a.mat);\nb.addState(197);" },
+  199: { actor: 110, animation: 185,                                                        // ... next block, cast by the last block
+    script: "b.addState(196);\nb.setStateCounter(196, a.getStateCounter(196) - 1);\nif (b.getStateCounter(196) > 0) b.addState(197);\na.removeState(197);" },
+  285: { actor: 120, animation: 194, script: "b.addState(232);" },                          // Servo da Noite
+  315: { actor: 121, animation: 139, script: "b.addState(259);\nb.event().setDirection(8);" },// Armadilha de Corrente
+  333: { actor: 123, count: "a.mat", animation: 205, script: "b.addState(277);" },          // Erguer os Mortos
+  353: { actor: 133, animation: 208, script: "b.addState(293);" },                          // Cópia Ilusória
+  397: { actor: 134, animation: 216,                                                        // Guardiões de Pedra
+    script: "b.event().setDirection(a.event().direction());\nb.addState(328);\nb.addState(327);\nb.setStateCounter(327, a.mat);" },
+  398: { actor: 134, animation: 216,                                                        // ... next guard, cast by the last guard
+    script: "b.event().setDirection(a.event().direction());\nb.addState(327);\nb.setStateCounter(327, a.getStateCounter(327) - 1);\nif (b.getStateCounter(327) > 0) b.addState(328);\na.removeState(328);" },
+};
+// Invocar Abissal/Celestial/Sílfide/Sátiro set a counter on state 274 (1-4), and the
+// common event picked states 270-273 from it, with the summoner's Magia as their counter.
+for (const [id, n] of [[329, 1], [330, 2], [331, 3], [332, 4]]) {
+  const st = 269 + n;
+  SUMMONS[id] = { actor: 122, animation: 204, script: `b.addState(${st});\nb.setStateCounter(${st}, a.mat);` };
+}
+for (const [id, sm] of Object.entries(SUMMONS)) {
+  const s = skills[id];
+  const ce = s.effects.find((e) => e.code === 44);
+  s.effects = s.effects.filter((e) => e.code !== 44);
+  const lines = [`actor: ${sm.actor}`, `at: ${sm.at || "target"}`, `count: ${sm.count || "1"}`, `animation: ${sm.animation}`];
+  s.note = `<summon>\n${lines.join("\n")}\n</summon>\n<script:summoned>\n${sm.script}\n</script>\n` + s.note;
+  report.push(`skill ${id} ${s.name}: common event ${ce ? ce.dataId : "?"} -> <summon> actor ${sm.actor}`);
 }
 // "Outros" (items / end turn submenu) is replaced by menu commands.
 skills[2].note = "<hidden>\n" + skills[2].note;
@@ -355,7 +495,7 @@ Object.assign(move, {
   mpCost: 0, tpCost: 0, scope: 11, occasion: 1, animationId: 0,
   effects: [], message1: "", message2: "", messageType: 1,
   damage: { critical: false, elementId: 0, formula: "0", type: 0, variance: 0 },
-  note: "<action:free>\n<move:walk>\n<perTurn:1>\n<mapBattle:true>",
+  note: "<action:free>\n<move:walk>\n<perTurn:1>",
 });
 skills[MOVE_SKILL_ID] = move;
 skills.forEach((s) => { if (s && s.messageType === undefined) s.messageType = 1; });
@@ -392,6 +532,7 @@ for (const f of fs.readdirSync(path.join(MZ, "data"))) {
 const mvInfos = mvData("MapInfos.json");
 const infos = [];
 infos[TEST_MAP_ID] = Object.assign({}, mvInfos[TEST_MAP_ID], { parentId: 0, order: 2 });
+infos[PVP_MAP_ID] = Object.assign({}, mvInfos[PVP_MAP_ID], { parentId: 0, order: 3 });
 
 // Map 1: Gear's summon map (SRPG_Summon_MZ loads it at boot). Templates for
 // summoned units go here as events; empty for now.
@@ -402,7 +543,16 @@ writeJson(mzDataPath("MapInfos.json"), infos);
 {
   const w = 10, h = 10;
   const summonMap = Object.assign(mvData(`Map${String(TEST_MAP_ID).padStart(3, "0")}.json`), {
-    displayName: "", width: w, height: h, data: new Array(w * h * 6).fill(0), events: [null],
+    displayName: "", width: w, height: h, data: new Array(w * h * 6).fill(0), events: [null, {
+      id: 1, name: "Modelo", note: "", x: 0, y: 0,
+      pages: [{ conditions: { actorId: 1, actorValid: false, itemId: 1, itemValid: false, selfSwitchCh: "A",
+        selfSwitchValid: false, switch1Id: 1, switch1Valid: false, switch2Id: 1, switch2Valid: false,
+        variableId: 1, variableValid: false, variableValue: 0 }, directionFix: false,
+        image: { tileId: 0, characterName: "", direction: 2, pattern: 1, characterIndex: 0 },
+        list: [{ code: 0, indent: 0, parameters: [] }], moveFrequency: 3,
+        moveRoute: { list: [{ code: 0, parameters: [] }], repeat: true, skippable: false, wait: false },
+        moveSpeed: 3, moveType: 0, priorityType: 1, stepAnime: false, through: false, trigger: 0, walkAnime: true }],
+    }],
     note: "Modelos de invocação para SRPG_Summon_MZ.", autoplayBgm: false, autoplayBgs: false,
   });
   writeJson(mzDataPath("Map001.json"), summonMap);
@@ -411,6 +561,16 @@ writeJson(mzDataPath("MapInfos.json"), infos);
 const map = mvData(`Map${String(TEST_MAP_ID).padStart(3, "0")}.json`);
 // Old battle logic events (spawning, YEP calls, old common events) are dropped.
 for (const id of [15, 16, 17, 20, 21, 22, 23]) map.events[id] = null;
+// Enemies that got an SRW version (e.g. Bárbaro -> Bandido).
+for (const ev of map.events) {
+  if (!ev) continue;
+  const m = ev.note.match(/<type:enemy>\s*<id:(\d+)>/);
+  const to = m && replaceEnemyOnMap[m[1]];
+  if (!to) continue;
+  ev.note = ev.note.replace(/<id:\d+>/, `<id:${to}>`);
+  const u = SRW_ENEMIES.find((x) => replaceEnemyOnMap[x.from] === to);
+  for (const p of ev.pages) Object.assign(p.image, { characterName: `$hon_${u.sprite}`, characterIndex: 0 });
+}
 
 const cmd = (code, indent, parameters) => ({ code, indent, parameters });
 const plugin = (indent, command, text, args, lines) => [
@@ -434,10 +594,23 @@ const addEvent = (name, note, x, y, pages) => {
   return id;
 };
 
-// Autorun: start the SRPG battle once.
+// Autorun: pick a mode, then start the SRPG battle once. "PvP (Arena)" sets
+// the match options (a stand-in for the old Inn lobby) and goes to the arena.
 const startPage = page([
-  ...plugin(0, "StartEnd", "Start/End SRPG battle", { key: "start" }, ["Start/End toggle = start"]),
   cmd(123, 0, ["A", 0]),
+  cmd(101, 0, ["", 0, 0, 2, ""]),
+  cmd(401, 0, ["Escolha o modo de jogo."]),
+  cmd(102, 0, [["Campanha", "PvP (Arena)"], -1, 0, 2, 0]),
+  cmd(402, 0, [0, "Campanha"]),
+  ...plugin(1, "StartEnd", "Start/End SRPG battle", { key: "start" }, ["Start/End toggle = start"]),
+  cmd(0, 1, []),
+  cmd(402, 0, [1, "PvP (Arena)"]),
+  cmd(121, 1, [PVP_SWITCH, PVP_SWITCH, 0]),
+  cmd(121, 1, [DEATHMATCH_SWITCH, DEATHMATCH_SWITCH, 0]),
+  cmd(122, 1, [LIVES_VAR, LIVES_VAR, 0, 0, 1]), // 1 extra life each
+  cmd(201, 1, [0, PVP_MAP_ID, 11, 10, 2, 0]),
+  cmd(0, 1, []),
+  cmd(404, 0, []),
 ], { trigger: 3 });
 const donePage = page([]);
 donePage.conditions.selfSwitchValid = true;
@@ -473,13 +646,58 @@ addEvent("Fim de Ação", "<type:afterAction>", 2, 0, [page([
 
 // The four test heroes, placed where CE "ComeçoDaBatalha" used to spawn them.
 const actors = mvData("Actors.json");
-[[10, 7], [10, 8], [11, 7], [11, 8]].forEach(([x, y], i) => {
+[[10, 7], [10, 8], [11, 7], [11, 8], [10, 9]].forEach(([x, y], i) => {
   const a = actors[TEST_PARTY[i]];
   addEvent(a.name, `<type:actor><id:${a.id}>`, x, y, [page([], {
-    image: { tileId: 0, characterName: a.characterName, direction: 2, pattern: 1, characterIndex: a.characterIndex },
+    image: SRW_ACTORS[a.id]
+      ? { tileId: 0, characterName: `$hon_${SRW_ACTORS[a.id].sprite}`, direction: 2, pattern: 1, characterIndex: 0 }
+      : { tileId: 0, characterName: a.characterName, direction: 2, pattern: 1, characterIndex: a.characterIndex },
   })]);
 });
 writeJson(mzDataPath(`Map${String(TEST_MAP_ID).padStart(3, "0")}.json`), map);
+
+// PvP arena (MV Map014): the old draft/lobby events are dropped; two fixed
+// teams for now. HoN_PvP runs the match (team turns, lives, winner switches).
+{
+  const arena = mvData(`Map${String(PVP_MAP_ID).padStart(3, "0")}.json`);
+  arena.events = [null];
+  let id = 1;
+  const add = (name, note, x, y, pages) => { arena.events[id] = { id, name, note, pages, x, y }; id++; };
+  add("Iniciar PvP", "", 0, 0, [page([
+    cmd(123, 0, ["A", 0]),
+    cmd(121, 0, [PVP_SWITCH, PVP_SWITCH, 0]),
+    cmd(357, 0, ["SRPG_BattlePrepare_MZ", "Disable", "disable battle Prepare", {}]),
+    ...plugin(0, "StartEnd", "Start/End SRPG battle", { key: "start" }, ["Start/End toggle = start"]),
+  ], { trigger: 3 }), Object.assign(page([]), { conditions: Object.assign(page([]).conditions, { selfSwitchValid: true }) })]);
+  add("Início", "<type:battleStart>", 1, 0, [page([
+    ...plugin(0, "winLoseCondition", "Set win/loss condition statement", { key: "clear", text: "" },
+      ["Description of process = clear", "Text of win/loss conditions = "]),
+    ...plugin(0, "winLoseCondition", "Set win/loss condition statement", { key: "win", text: "Derrote a outra equipe." },
+      ["Description of process = win", "Text of win/loss conditions = Derrote a outra equipe."]),
+  ])]);
+  const win = (sw, text) => [
+    cmd(111, 0, [0, sw, 0]), // switch ON
+    ...endBattle(1, text),
+    cmd(0, 1, []),
+    cmd(412, 0, []),
+  ];
+  add("Fim de Ação", "<type:afterAction>", 2, 0, [page([
+    ...win(BLUE_WINS, "\\C[4]Equipe Azul\\C[0] venceu!"),
+    ...win(RED_WINS, "\\C[2]Equipe Vermelha\\C[0] venceu!"),
+  ])]);
+  for (const [team, t] of Object.entries(PVP_TEAMS)) {
+    t.actors.forEach((actorId, i) => {
+      const a = actors[actorId];
+      const [x, y] = t.cells[i];
+      const look = SRW_ACTORS[a.id]
+        ? { characterName: `$hon_${SRW_ACTORS[a.id].sprite}`, characterIndex: 0 }
+        : { characterName: a.characterName, characterIndex: a.characterIndex };
+      add(a.name, `<type:actor><id:${a.id}><team:${team}>`, x, y,
+        [page([], { image: Object.assign({ tileId: 0, direction: t.dir, pattern: 1 }, look) })]);
+    });
+  }
+  writeJson(mzDataPath(`Map${String(PVP_MAP_ID).padStart(3, "0")}.json`), arena);
+}
 
 // -----------------------------------------------------------------------------
 // 5. Assets
@@ -511,7 +729,7 @@ const pjSrc = fs.readFileSync(pjPath, "utf8");
 const plugins = JSON.parse(pjSrc.slice(pjSrc.indexOf("["), pjSrc.lastIndexOf("]") + 1));
 const core = plugins.find((p) => p.name === "SRPG_core_MZ").parameters;
 Object.assign(core, {
-  "Use Map Battle": "2", "Map Battle Switch": "99", "defaultMove": "4",
+  "Use Map Battle": "3", "Map Battle Switch": "99", "defaultMove": "4",
   "srpgBattleExpRate": "0", "srpgBattleExpRateForActors": "0", "srpgAutoBattleStateId": "0",
   "srpgBestSearchRouteSize": "60", "srpgPredictionWindowMode": "3",
   "useAgiAttackPlus": "false",         // agi is "Alcance" (range) in this game
@@ -541,6 +759,14 @@ const hon = [
   { name: "HoN_Actions", status: true, description: "Heroes of Nowhere: full/free actions and Move as a skill.",
     parameters: { "Move Skill ID": String(MOVE_SKILL_ID), "Default Action": "full", "Unit Switching": "free",
       "End Command": "Encerrar", "Item Command": "Itens" } },
+  { name: "HoN_Targeting", status: true, description: "Heroes of Nowhere: sides, taunt, invisibility, marked targets.", parameters: {} },
+  { name: "HoN_Summons", status: true, description: "Heroes of Nowhere: <summon> on skills.", parameters: {} },
+  { name: "HoN_PvP", status: true, description: "Heroes of Nowhere: Blue vs Red on one screen, team turns, lives.",
+    parameters: { "PvP Switch": String(PVP_SWITCH), "Blue State": "131", "Red State": "132",
+      "Deathmatch Switch": String(DEATHMATCH_SWITCH), "Lives Variable": String(LIVES_VAR), "Lives State": "365",
+      "Blue Wins Switch": String(BLUE_WINS), "Red Wins Switch": String(RED_WINS) } },
+  { name: "HoN_FieldMotions", status: true, description: "Heroes of Nowhere: attack and cast animations on the map.",
+    parameters: { "Attack Timing": "8,14,10", "Cast Timing": "18,20,10" } },
 ];
 const kept = plugins.filter((p) => !p.name.startsWith("HoN_"));
 const out = kept.concat(hon);

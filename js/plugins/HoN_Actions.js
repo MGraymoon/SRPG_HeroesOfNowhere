@@ -396,6 +396,7 @@ Imported.HoN_Actions = "0.1";
         battler._honTurn = last.snap.turn;
         battler._honCd = last.snap.cd;
         battler.setMovedStep(last.steps || 0);
+        if (HoN.refreshAuras) HoN.refreshAuras();
         return true;
     };
 
@@ -681,6 +682,7 @@ Imported.HoN_Actions = "0.1";
         actor.setMovedStep((from.steps || 0) + steps);
         actor._honMoveOverride = null;
         $gameTemp._honMoveSkill = 0;
+        if (HoN.refreshAuras) HoN.refreshAuras();
     };
 
     // Gear confirms the destination inside triggerAction.

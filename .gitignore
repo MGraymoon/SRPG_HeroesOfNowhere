@@ -1,3 +1,6 @@
 save/
 *.rmmzsave
 dev/screenshots/
+# Super Retro World sprites: licence forbids redistribution. Rebuild with dev/build_srw_sprites.py
+img/characters/$hon_*.png
+img/characters/hon/

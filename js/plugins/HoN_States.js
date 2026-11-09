@@ -38,6 +38,17 @@
  *   ...                       to decide whether it's active right now
  *   </passiveCondition>
  *
+ *   <aura>                    while a unit has this state, units in range get
+ *   state: 120                  another state (applied by the aura's owner)
+ *   range: a.luk                tiles, walking distance; a = the owner
+ *   target: ally                ally (owner included), enemy, or all
+ *   mode: remove                remove: the state leaves with the range
+ *   </aura>                     keep: it stays (and runs its own duration)
+ *                               counter: also set its counter from `counter: a.mat`
+ *                               count: this state's counter = units in range
+ *   Auras refresh at battle start, every turn start, after every action and
+ *   after every move. Several <aura> blocks may sit on one state.
+ *
  * ============================================================================
  * Passive states (actors, classes, skills, equipment, enemies)
  * ============================================================================
@@ -172,6 +183,22 @@ Imported.HoN_States = "0.1";
 
         const cond = note.match(/<passiveCondition>([\s\S]*?)<\/passiveCondition>/i);
         if (cond) hon.passiveCondition = HoN.compile(cond[1], `${label} <passiveCondition>`);
+
+        // <aura> blocks: while a unit has this state, units in range get another state
+        hon.auras = [];
+        for (const m of note.matchAll(/<aura>([\s\S]*?)<\/aura>/gi)) {
+            const field = (k) => { const f = m[1].match(new RegExp("^\\s*" + k + "\\s*:\\s*(.+?)\\s*$", "im")); return f ? f[1] : null; };
+            const aura = {
+                state: Number(field("state")),
+                range: HoN.compileExpression(field("range") || "1", `${label} <aura> range`),
+                target: (field("target") || "ally").toLowerCase(),
+                mode: (field("mode") || "remove").toLowerCase(),
+                self: field("self") ? field("self").toLowerCase() !== "false" : true,
+            };
+            if (field("counter")) aura.counter = HoN.compileExpression(field("counter"), `${label} <aura> counter`);
+            if (aura.state) hon.auras.push(aura);
+            else HoN.reportError(`${label} <aura>`, new Error("missing 'state:' line"));
+        }
     };
 
     //=========================================================================
@@ -459,6 +486,74 @@ Imported.HoN_States = "0.1";
         const arr = event && $gameSystem.EventToUnit(event.eventId());
         if (arr && arr[1] && arr[1]._honPending) HoN.fireStates(arr[1], "actionend");
         _srpgAfterAction.call(this);
+    };
+
+    //=========================================================================
+    // Auras
+    //=========================================================================
+    // Units a state can reach: within `range` tiles (walking distance, as in
+    // MV), on the right side. The owner itself counts for ally auras.
+    HoN.refreshAuras = function() {
+        if (!$gameSystem.isSRPGMode()) return;
+        const units = HoN.allUnits().filter((u) => u.isAlive());
+        const wanted = new Map(); // unit -> Map(childStateId -> { owner, aura })
+        for (const owner of units) {
+            const oe = owner.event();
+            for (const state of owner.states()) {
+                for (const aura of (state.hon && state.hon.auras) || []) {
+                    const range = Number(HoN.run(aura.range, owner, null, state, 0, 0)) || 0;
+                    let count = 0;
+                    for (const unit of units) {
+                        if (unit === owner && (!aura.self || aura.target === "enemy")) continue;
+                        if (aura.target === "ally" && !HoN.isFriend(owner, unit)) continue;
+                        if (aura.target === "enemy" && !HoN.isOpponent(owner, unit)) continue;
+                        const ue = unit.event();
+                        if (Math.abs(ue.posX() - oe.posX()) + Math.abs(ue.posY() - oe.posY()) > range) continue;
+                        if (!wanted.has(unit)) wanted.set(unit, new Map());
+                        wanted.get(unit).set(aura.state, { owner, aura });
+                        count++;
+                    }
+                    if (aura.mode === "count") owner.setStateCounter(state.id, count);
+                }
+            }
+        }
+        for (const unit of units) {
+            const marks = unit._honAuraChildren || (unit._honAuraChildren = {});
+            const want = wanted.get(unit) || new Map();
+            for (const [childId, { owner, aura }] of want) {
+                if (!unit._states.includes(childId)) {
+                    const previous = HoN.currentSubject;
+                    HoN.currentSubject = owner;
+                    try { unit.addState(childId); } finally { HoN.currentSubject = previous; }
+                }
+                if (aura.counter) unit.setStateCounter(childId, Number(HoN.run(aura.counter, owner, unit, null, 0, 0)) || 0);
+                marks[childId] = aura.mode === "keep" ? "keep" : "managed";
+            }
+            for (const childId of Object.keys(marks).map(Number)) {
+                if (want.has(childId)) continue;
+                if (marks[childId] === "managed") unit.removeState(childId);
+                delete marks[childId];
+            }
+        }
+    };
+
+    // When things move or change: battle start, every turn start, after each action.
+    const _startSRPG = Game_System.prototype.startSRPG;
+    Game_System.prototype.startSRPG = function() {
+        _startSRPG.call(this);
+        HoN.refreshAuras();
+    };
+    for (const name of ["srpgStartActorTurn", "srpgStartEnemyTurn"]) {
+        const _start = Game_System.prototype[name];
+        Game_System.prototype[name] = function() {
+            _start.call(this);
+            HoN.refreshAuras();
+        };
+    }
+    const _afterActionAuras = Scene_Map.prototype.srpgAfterAction;
+    Scene_Map.prototype.srpgAfterAction = function() {
+        _afterActionAuras.call(this);
+        HoN.refreshAuras();
     };
 
     //=========================================================================

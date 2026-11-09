@@ -1,5 +1,6 @@
-state 148 Ponto Fraco: fixed a typo that broke its script in MV
-state 215 Rolamento Defensivo: fixed a typo that broke its script in MV
+state 1 Nocaute: script fixed (see STATE_TYPO_FIXES)
+state 148 Ponto Fraco: script fixed (see STATE_TYPO_FIXES)
+state 215 Rolamento Defensivo: script fixed (see STATE_TYPO_FIXES)
 state 14 Retribuição Justa: <State Animation> kept (visual, not ported yet)
 state 15 Montaria Sagrada: <Weapon Image> kept (visual, not ported yet)
 state 39 Sombra: <Regen Formula> came from a plugin that wasn't installed in MV; left as is
@@ -62,6 +63,17 @@ state 346 RangedAttackDarkbow: <Weapon Image> kept (visual, not ported yet)
 state 347 RangedAttackGun: <Weapon Image> kept (visual, not ported yet)
 state 348 RangedAttackCrossbow: <Weapon Image> kept (visual, not ported yet)
 state 349 RangedAttackBow: <Weapon Image> kept (visual, not ported yet)
+aura: state 15 Montaria Sagrada -> state 120 (range: a.luk, target: ally, mode: remove)
+aura: state 118 Aura Sagrada -> state 119 (range: a.luk, target: ally, mode: remove)
+aura: state 16 Retribuição Justa -> state 14 (range: a.luk, target: enemy, mode: remove)
+aura: state 151 Escuridão Drenante -> state 152 (range: a.luk, target: enemy, mode: counter, counter: a.param(4))
+aura: state 166 Guarda de Ferro -> state 167 (range: a.agi, target: enemy, mode: counter, counter: a.param(4))
+aura: state 213 Domínio Metamágico -> state 214 (range: 1, target: ally, mode: remove)
+aura: state 233 Aura do Desespero -> state 234 (range: a.luk, target: enemy, mode: remove)
+aura: state 235 Guardiã dos Túmulos -> state 236 (range: a.luk, target: ally, mode: remove)
+aura: state 243 Escudo Fraterno -> state 244 (range: a.agi, target: ally, mode: counter, counter: a.param(3))
+aura: state 311 Espírito Opressor -> state 312 (range: a.luk, target: enemy, mode: count)
+skill 153 Desafio Honrado: fixed a typo that broke its script in MV
 skill 1 Ataque: kept setup action, target action, whole action, follow action, finish action
 skill 2 Outros: old code said free, description says full (used full)
 skill 8 Ataque: kept setup action, target action
@@ -85,7 +97,21 @@ skill 170 Reflexo Instantâneo: kept requireScript
 skill 174 Constrição Atroz: kept Custom Execution
 skill 183 Forma Natural: kept showScript
 skill 193 Aura Restauradora: kept requireScript
+skill 201 Ataque: <srpgAreaType:single> -> plain single target
+skill 202 Ataque: <srpgAreaType:single> -> plain single target
+skill 204 Ataque: <srpgAreaType:single> -> plain single target
+skill 205 Ataque: <srpgAreaType:single> -> plain single target
+skill 211 Ataque: <srpgAreaType:single> -> plain single target
+skill 212 Ataque: <srpgAreaType:single> -> plain single target
+skill 213 Acumular Energia: <srpgAreaType:single> -> plain single target
+skill 214 Metamorfose: <srpgAreaType:single> -> plain single target
+skill 215 Metamorfose Incompleta: <srpgAreaType:single> -> plain single target
+skill 217 Ataque Duplo: <srpgAreaType:single> -> plain single target
+skill 218 Ataque Duplo: <srpgAreaType:single> -> plain single target
+skill 246 Ataque: <srpgAreaType:single> -> plain single target
+skill 248 Ataque: <srpgAreaType:single> -> plain single target
 skill 248 Ataque: kept setup action, target action, whole action, follow action, finish action
+skill 249 Ataque: <srpgAreaType:single> -> plain single target
 skill 260 Nota Ressoante: kept requireScript
 skill 277 Golpe pelas Costas: kept requireScript
 skill 278 Invisibilidade: kept requireScript
@@ -182,3 +208,17 @@ skill 440 Habilidade Final: old code said free, description says full (used full
 skill 440 Habilidade Final: kept requireScript
 skill 452 Dádiva da Morte: kept requireScript
 skill 500 Descansar: kept showScript
+skill 66 Portão do Submundo: common event 1 -> <summon> actor 101
+skill 177 Aliado da Natureza: common event 20 -> <summon> actor 109
+skill 197 Muralha de Gelo: common event 21 -> <summon> actor 110
+skill 199 Muralha de Gelo: common event 22 -> <summon> actor 110
+skill 285 Servo da Noite: common event 23 -> <summon> actor 120
+skill 315 Armadilha de Corrente: common event 24 -> <summon> actor 121
+skill 329 Invocar Abissal: common event 25 -> <summon> actor 122
+skill 330 Invocar Celestial: common event 25 -> <summon> actor 122
+skill 331 Invocar Sílfide: common event 25 -> <summon> actor 122
+skill 332 Invocar Sátiro: common event 25 -> <summon> actor 122
+skill 333 Erguer os Mortos: common event 27 -> <summon> actor 123
+skill 353 Cópia Ilusória: common event 28 -> <summon> actor 133
+skill 397 Guardiões de Pedra: common event 33 -> <summon> actor 134
+skill 398 Guardiões de Pedra: common event 34 -> <summon> actor 134

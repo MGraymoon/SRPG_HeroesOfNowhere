@@ -24,13 +24,19 @@
     const url = SceneManager.snap().canvas.toDataURL("image/png");
     return (await fetch(`/dev/shot/${name}.png`, { method: "POST", body: url })).text();
   };
-  // Title -> new game -> battle prepare -> first player turn.
-  H.startBattle = async () => {
+  // Title -> new game -> mode choice ("campaign" or "pvp") -> battle prepare -> first player turn.
+  H.startBattle = async (mode = "campaign") => {
     await H.until(() => H.step(0) === "Scene_Title" && SceneManager._scene._commandWindow && SceneManager._scene._commandWindow.isOpen(), 4000);
     SceneManager._scene.commandNewGame();
+    await H.until(() => H.step(0) === "Scene_Map" && SceneManager._scene._choiceListWindow &&
+      SceneManager._scene._choiceListWindow.active && SceneManager._scene._choiceListWindow.isOpen(), 4000);
+    await H.run(10);
+    SceneManager._scene._choiceListWindow.select(mode === "pvp" ? 1 : 0);
+    await H.press("ok");
     await H.until(() => H.step(0) === "Scene_Menu" || (H.step(0) === "Scene_Map" && $gameSystem.isBattlePhase() === "actor_phase"), 4000);
     if (H.step(0) === "Scene_Menu") await H.press("ok"); // "Ready" in battle prepare
-    return H.until(() => H.step(0) === "Scene_Map" && H.phase() === "actor_phase/normal" && !$gameMap.isEventRunning(), 4000);
+    return H.until(() => H.step(0) === "Scene_Map" && H.phase() === "actor_phase/normal" &&
+      !$gameMap.isEventRunning() && !$gameMessage.isBusy(), 4000);
   };
   // Select the unit standing on (x, y) and open its menu.
   H.select = async (x, y) => { $gamePlayer.locate(x, y); await H.press("ok"); await H.run(20); return H.state(); };
@@ -52,6 +58,19 @@
     }
     return H.until(() => $gameSystem.isBattlePhase() === "enemy_phase", 2000);
   };
+  // PvP: end every unit of the team whose turn it is, then wait for the other team's turn.
+  H.team = () => HoN.PvP && HoN.PvP.team();
+  H.endTeamTurn = async () => {
+    const team = H.team(), turn = $gameVariables.value(3);
+    for (let guard = 0; guard < 20 && H.team() === team && $gameSystem.isBattlePhase() === "actor_phase"; guard++) {
+      if ($gameSystem.isSubBattlePhase() === "actor_command_window") { await H.choose("Encerrar"); await H.run(20); continue; }
+      const next = HoN.allUnits().find((u) => u.isActor() && u.canInput());
+      if (!next) break;
+      await H.select(next.event().posX(), next.event().posY());
+    }
+    return H.until(() => (H.team() !== team || $gameVariables.value(3) !== turn) &&
+      H.phase() === "actor_phase/normal" && !$gameMessage.isBusy() && !$gameMap.isEventRunning(), 4000);
+  };
   // Let the enemy phase play out (skipping messages) until the heroes' turn is back.
   H.untilHeroTurn = async () => {
     const t = await H.until(() => {
@@ -61,9 +80,15 @@
     Input._currentState.ok = false;
     return t;
   };
+  // Put the cursor on a cell the way walking there would: Gear's AoE aim point
+  // follows the cursor only through movement, so teleporting it needs this.
+  H.aim = (x, y) => {
+    $gamePlayer.locate(x, y);
+    if ($gameSystem.isSubBattlePhase() === "actor_target" && $gameSystem.positionInRange(x, y)) $gameTemp.showArea(x, y);
+  };
   // Confirm a cell (move destination or target) and wait until the menu is back or the turn moved on.
   H.confirmAt = async (x, y) => {
-    $gamePlayer.locate(x, y); await H.press("ok");
+    H.aim(x, y); await H.press("ok");
     await H.until(() => !$gameSystem.srpgWaitMoving() && !$gameMap.isEventRunning() &&
       ["actor_command_window", "normal"].includes($gameSystem.isSubBattlePhase()) && H.step(0) === "Scene_Map", 4000);
     await H.run(30); return H.state();
